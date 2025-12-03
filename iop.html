@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* Compacted CSS */
+        :root { --p: #9c88ff; --inc: #2ecc71; --exp: #c0392b; --sh: 0 1px 3px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.24); }
+        * { box-sizing: border-box; }
+        body { background: #f7f7f7; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: sans-serif; }
+        .cont { margin: 30px auto; width: 350px; }
+        .login { background: #fff; padding: 30px; border-radius: 5px; box-shadow: var(--sh); text-align: center; }
+        .login input { padding: 10px; margin: 10px 0; width: 100%; border: 1px solid #dedede; border-radius: 4px; }
+        .tracker { display: none; }
+        h3 { border-bottom: 1px solid #bbb; padding-bottom: 10px; margin: 20px 0 10px; }
+        h4 { margin: 0; text-transform: uppercase; }
+        .inc-exp { background: #fff; box-shadow: var(--sh); padding: 20px; display: flex; justify-content: space-between; margin: 20px 0; }
+        .inc-exp > div { flex: 1; text-align: center; border-right: 1px solid #dedede; }
+        .money { font-size: 20px; font-weight: bold; }
+        .money.plus { color: var(--inc); } .money.minus { color: var(--exp); }
+        .list { list-style-type: none; padding: 0; }
+        .list li { background: #fff; box-shadow: var(--sh); color: #333; display: flex; justify-content: space-between; position: relative; padding: 10px; margin: 10px 0; }
+        .list li.plus { border-right: 5px solid var(--inc); } .list li.minus { border-right: 5px solid var(--exp); }
+        .delete-btn { cursor: pointer; background: #e74c3c; border: 0; color: #fff; position: absolute; top: 50%; left: 0; transform: translate(-100%, -50%); opacity: 0; transition: opacity 0.3s ease; }
+        .list li:hover .delete-btn { opacity: 1; }
+        input[type='text'], input[type='number'] { border: 1px solid #dedede; border-radius: 2px; display: block; padding: 10px; width: 100%; }
+        .btn { cursor: pointer; background: var(--p); box-shadow: var(--sh); color: #fff; border: 0; display: block; padding: 10px; width: 100%; border-radius: 4px; }
+        .logout-btn { background: #333; margin: -10px 0 10px; }
+    </style>
+</head>
+<body>
+
+    <div id="login-section" class="login cont">
+        <h2>Finance Tracker</h2>
+        <p>Enter any values to login for testing.</p>
+        <form id="login-form">
+            <input type="text" id="username" placeholder="Username (any value)" required>
+            <input type="password" id="password" placeholder="Password (any value)" required>
+            <button type="submit" class="btn">Login</button>
+        </form>
+    </div>
+    
+    <div id="tracker-section" class="tracker cont">
+        <button class="btn logout-btn" onclick="logout()">Logout</button>
+        <h4>Your Balance</h4>
+        <h1 id="balance">$0.00</h1>
+        <div class="inc-exp" id="summary-balance">
+            <div><h4>Income</h4><p id="money-plus" class="money plus">+$0.00</p></div>
+            <div><h4>Expense</h4><p id="money-minus" class="money minus">-$0.00</p></div>
+        </div>
+
+        <h3>Monthly Summary</h3>
+        <div id="monthly-summary"></div>
+
+        <h3>Spending Trend</h3>
+        <div style="background: white; padding: 15px; border-radius: 5px; box-shadow: var(--sh);"><canvas id="pivotChart"></canvas></div>
+
+        <h3>Add New</h3>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+            <button class="btn" onclick="showForm('income')" style="flex: 1; margin-right: 5px; background: var(--inc);">+ Income</button>
+            <button class="btn" onclick="showForm('expense')" style="flex: 1; margin-left: 5px; background: var(--exp);">- Expense</button>
+        </div>
+
+        <form id="income-form" style="display: none;" onsubmit="handleIncomeSubmit(event)">
+            <input type="text" id="income-text" placeholder="Source" required />
+            <input type="number" id="income-amount" placeholder="Amount" required min="0" />
+            <button type="submit" class="btn" style="background: var(--inc);">Log Income</button>
+        </form>
+        <form id="expense-form" style="display: none;" onsubmit="handleExpenseSubmit(event)">
+            <input type="text" id="expense-text" placeholder="Item/Category" required />
+            <input type="number" id="expense-amount" placeholder="Amount" required min="0" />
+            <button type="submit" class="btn" style="background: var(--exp);">Log Expense</button>
+        </form>
+
+        <h3>History</h3>
+        <ul id="list" class="list"></ul>
+    </div>
+
+    <script>
+        const [ls, VALID_U, VALID_P] = [localStorage, "admin", "1234"];
+        const [loginSec, trackerSec] = [document.getElementById('login-section'), document.getElementById('tracker-section')];
+        const [balance, mPlus, mMinus, listEl, mSum] = ['balance', 'money-plus', 'money-minus', 'list', 'monthly-summary'].map(id => document.getElementById(id));
+        const [iForm, eForm] = [document.getElementById('income-form'), document.getElementById('expense-form')];
+        let transactions = ls.getItem('transactions') ? JSON.parse(ls.getItem('transactions')) : [];
+        let myChart;
+
+        if(ls.getItem('isLoggedIn') === 'true') showTracker();
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const [user, pass] = [document.getElementById('username').value, document.getElementById('password').value];
+            // Universal Login Logic: checks if both fields are non-empty
+            if(user.length > 0 && pass.length > 0) { 
+                ls.setItem('isLoggedIn', 'true'); showTracker(); 
+            } else { 
+                alert("Please enter a username and password."); 
+            }
+        });
+
+        function showTracker() { loginSec.style.display = 'none'; trackerSec.style.display = 'block'; init(); }
+        function logout() { 
+            ls.removeItem('isLoggedIn'); loginSec.style.display = 'block'; trackerSec.style.display = 'none'; 
+            document.getElementById('username').value = ''; document.getElementById('password').value = ''; 
+            listEl.innerHTML = ''; balance.innerText = '$0.00'; mPlus.innerText = '+$0.00'; mMinus.innerText = '-$0.00'; 
+            if (myChart) myChart.destroy(); 
+        }
+        function showForm(type) { iForm.style.display = 'none'; eForm.style.display = 'none'; if (type === 'income') iForm.style.display = 'block'; else if (type === 'expense') eForm.style.display = 'block'; }
+        function generateID() { return Math.floor(Math.random() * 100000000); }
+        function updateLS() { ls.setItem('transactions', JSON.stringify(transactions)); }
+
+        function finishTransaction(textId, amountId, formEl, sign) {
+            const [text, amount] = [document.getElementById(textId).value, +document.getElementById(amountId).value];
+            const t = { id: generateID(), text: text, amount: sign * Math.abs(amount), date: new Date().toISOString() };
+            transactions.push(t);
+            updateValues(); updateLS(); addTransactionDOM(t);
+            [document.getElementById(textId).value, document.getElementById(amountId).value] = ['', ''];
+            formEl.style.display = 'none';
+            init(); // Re-initialize to update sorting and charts
+        }
+        function handleIncomeSubmit(e) { e.preventDefault(); finishTransaction('income-text', 'income-amount', iForm, 1); }
+        function handleExpenseSubmit(e) { e.preventDefault(); finishTransaction('expense-text', 'expense-amount', eForm, -1); }
+        function removeTransaction(id) { transactions = transactions.filter(t => t.id !== id); updateLS(); init(); }
+
+        function addTransactionDOM(t) {
+            const [s, item] = [t.amount < 0 ? '-' : '+', document.createElement('li')];
+            item.classList.add(t.amount < 0 ? 'minus' : 'plus');
+            const dS = new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+            item.innerHTML = `<div style="flex-grow: 1;"><strong>${t.text}</strong><span style="font-size: 10px; color: #777; display: block;">${dS}</span></div><span>${s}${Math.abs(t.amount).toFixed(2)}</span><button class="delete-btn" onclick="removeTransaction(${t.id})">x</button>`;
+            listEl.appendChild(item);
+        }
+
+        function updateValues() {
+            const amounts = transactions.map(t => t.amount);
+            const total = amounts.reduce((acc, item) => acc + item, 0).toFixed(2);
+            const income = amounts.filter(item => item > 0).reduce((acc, item) => acc + item, 0).toFixed(2);
+            const expense = (amounts.filter(item => item < 0).reduce((acc, item) => acc + item, 0) * -1).toFixed(2);
+            balance.innerText = `$${total}`; mPlus.innerText = `+$${income}`; mMinus.innerText = `-$${expense}`;
+        }
+
+        function displayMonthlyReview() {
+            const [t, cM, cY] = [new Date(), new Date().getMonth(), new Date().getFullYear()];
+            const mT = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === cM && d.getFullYear() === cY; });
+            const mA = mT.map(t => t.amount);
+            const mI = mA.filter(a => a > 0).reduce((acc, item) => acc + item, 0).toFixed(2);
+            const mE = (mA.filter(a => a < 0).reduce((acc, item) => acc + item, 0) * -1).toFixed(2);
+            const mN = (mI - mE).toFixed(2);
+            const mNn = t.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            mSum.innerHTML = `<h4>Summary for ${mNn}</h4><div class="inc-exp" style="padding:10px; margin: 10px 0;"><div><p>Net Balance</p><p class="money ${mN >= 0 ? 'plus' : 'minus'}">$${mN}</p></div><div><p>Total Spent</p><p class="money minus">$${mE}</p></div></div><p style="font-size: 14px; text-align: center;">Recorded **${mT.length}** transactions.</p>`;
+        }
+
+        function aggregateMonthlyCategoryData(trans) {
+            const [dBm, uC, expenses] = [{}, new Set(), trans.filter(t => t.amount < 0)];
+            expenses.forEach(t => {
+                const [d, category, amount] = [new Date(t.date), t.text.toLowerCase().trim(), Math.abs(t.amount)];
+                const mK = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+                dBm[mK] = dBm[mK] || {}; dBm[mK][category] = (dBm[mK][category] || 0) + amount;
+                uC.add(category);
+            });
+            return { dBm, uC: Array.from(uC).sort() };
+        }
+
+        function renderPivotChart(data) {
+            const { dBm, uC } = data;
+            if (myChart) myChart.destroy();
+            const sMK = Object.keys(dBm).sort();
+            const datasets = uC.map((c, i) => {
+                const [d, color] = [sMK.map(mK => dBm[mK][c] || 0), `hsl(${(i * 50) % 360}, 70%, 50%)`];
+                return { label: c.charAt(0).toUpperCase() + c.slice(1), data: d, backgroundColor: color, borderColor: color, borderWidth: 1, fill: true };
+            });
+            myChart = new Chart(document.getElementById('pivotChart').getContext('2d'), {
+                type: 'bar', data: { labels: sMK, datasets: datasets },
+                options: { responsive: true, scales: { x: { stacked: true, title: { display: true, text: 'Month' } }, y: { stacked: true, title: { display: true, text: 'Amount ($)' } } },
+                    plugins: { title: { display: true, text: 'Monthly Spending by Category' } } }
+            });
+        }
+
+        function displayPivotChart() { renderPivotChart(aggregateMonthlyCategoryData(transactions)); }
+        
+        function init() {
+            listEl.innerHTML = '';
+            // Sort by date (newest first)
+            transactions.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(addTransactionDOM);
+            updateValues(); displayMonthlyReview(); displayPivotChart();
+        }
+    </script>
+</body>
+</html>
