@@ -1,0 +1,49 @@
+#overall{
+        width: 1000px;
+        height: 700px;
+        background-color: bisque;
+        margin-left: 300px;
+        margin-top: 50px;
+        display: flex;
+        gap: 100px;
+    }
+#tit{
+        text-align: center;
+        font-family: "Amaranth", sans-serif;
+
+    }
+#ovs{
+        padding-left: 20px;
+        padding-top: 5px;
+    }
+h4{
+        text-transform: capitalize;
+        font-size: 30px;
+    }
+input{
+        height: 30px;
+        border-radius: 10px;
+        width: 200px;
+        cursor: pointer;
+    }
+button{
+        width: 100px;
+        height: 50px;
+        font-size: large;
+        border-radius: 5px;
+        box-shadow: 2px 3px 4px black;
+    }
+#allover{
+        width: 1000px;
+        height: 300px;
+        background-color: aquamarine;
+        display: flex;
+        gap: 40px;
+        justify-content: space-between;
+        margin-left: 300px;
+}
+table{
+    font-family: cursive;
+    font-size: 20px;
+}
+
